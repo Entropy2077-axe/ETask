@@ -103,6 +103,7 @@
         <activity
             android:name="com.android.calendar.etask.AiAssistantActivity"
             android:label="@string/ai_assistant_title"
+            android:windowSoftInputMode="adjustResize"
             android:parentActivityName="com.android.calendar.AllInOneActivity" />
         <activity
             android:name="com.android.calendar.etask.AiSettingsActivity"

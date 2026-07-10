@@ -219,8 +219,6 @@ public class MonthByWeekAdapter extends SimpleWeeksAdapter {
             return super.getView(position, convertView, parent);
         }
         MonthWeekEventsView v;
-        LayoutParams params = new LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
         HashMap<String, Integer> drawingParams = null;
         boolean isAnimatingToday = false;
         if (convertView != null) {
@@ -252,7 +250,11 @@ public class MonthByWeekAdapter extends SimpleWeeksAdapter {
         }
         drawingParams.clear();
 
-        v.setLayoutParams(params);
+        int desiredHeight = parent.getHeight() / mNumWeeks;
+        ViewGroup.LayoutParams existingParams = v.getLayoutParams();
+        if (existingParams == null || existingParams.height != LayoutParams.MATCH_PARENT) {
+            v.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+        }
         v.setClickable(true);
         v.setOnTouchListener(this);
 
@@ -261,7 +263,7 @@ public class MonthByWeekAdapter extends SimpleWeeksAdapter {
             selectedDay = mSelectedDay.getWeekDay();
         }
 
-        drawingParams.put(SimpleWeekView.VIEW_PARAMS_HEIGHT, parent.getHeight() / mNumWeeks);
+        drawingParams.put(SimpleWeekView.VIEW_PARAMS_HEIGHT, desiredHeight);
         drawingParams.put(SimpleWeekView.VIEW_PARAMS_SELECTED_DAY, selectedDay);
         drawingParams.put(SimpleWeekView.VIEW_PARAMS_SHOW_WK_NUM, mShowWeekNumber ? 1 : 0);
         drawingParams.put(SimpleWeekView.VIEW_PARAMS_WEEK_START, mFirstDayOfWeek);

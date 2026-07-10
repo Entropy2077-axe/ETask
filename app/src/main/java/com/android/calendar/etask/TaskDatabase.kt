@@ -11,6 +11,8 @@ data class LocalTask(
     val notes: String,
     val due: String?,
     val completed: Boolean,
+    val category: String,
+    val recurrenceRule: String?,
 )
 
 data class ChatMessage(
@@ -20,7 +22,7 @@ data class ChatMessage(
     val createdAt: Long,
 )
 
-class TaskDatabase(context: Context) : SQLiteOpenHelper(context, "etask.db", null, 2) {
+class TaskDatabase(context: Context) : SQLiteOpenHelper(context, "etask.db", null, 3) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """CREATE TABLE tasks (
@@ -29,6 +31,8 @@ class TaskDatabase(context: Context) : SQLiteOpenHelper(context, "etask.db", nul
                 notes TEXT NOT NULL DEFAULT '',
                 due TEXT,
                 completed INTEGER NOT NULL DEFAULT 0,
+                category TEXT NOT NULL DEFAULT '',
+                recurrence_rule TEXT,
                 created_at INTEGER NOT NULL
             )""".trimIndent()
         )
@@ -37,6 +41,10 @@ class TaskDatabase(context: Context) : SQLiteOpenHelper(context, "etask.db", nul
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) createAiTables(db)
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE tasks ADD COLUMN category TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE tasks ADD COLUMN recurrence_rule TEXT")
+        }
     }
 
     private fun createAiTables(db: SQLiteDatabase) {
@@ -56,25 +64,34 @@ class TaskDatabase(context: Context) : SQLiteOpenHelper(context, "etask.db", nul
         )
     }
 
-    fun add(title: String, notes: String = "", due: String? = null): Long =
+    fun add(
+        title: String,
+        notes: String = "",
+        due: String? = null,
+        category: String = "",
+        recurrenceRule: String? = null,
+    ): Long =
         writableDatabase.insert("tasks", null, ContentValues().apply {
             put("title", title.trim())
             put("notes", notes.trim())
             put("due", due)
             put("completed", 0)
+            put("category", category.trim())
+            put("recurrence_rule", recurrenceRule)
             put("created_at", System.currentTimeMillis())
         })
 
     fun list(): List<LocalTask> {
         val result = ArrayList<LocalTask>()
         readableDatabase.query(
-            "tasks", arrayOf("id", "title", "notes", "due", "completed"),
+            "tasks", arrayOf("id", "title", "notes", "due", "completed", "category", "recurrence_rule"),
             null, null, null, null, "completed ASC, COALESCE(due, '9999') ASC, created_at DESC"
         ).use { cursor ->
             while (cursor.moveToNext()) {
                 result += LocalTask(
                     cursor.getLong(0), cursor.getString(1), cursor.getString(2),
-                    if (cursor.isNull(3)) null else cursor.getString(3), cursor.getInt(4) == 1
+                    if (cursor.isNull(3)) null else cursor.getString(3), cursor.getInt(4) == 1,
+                    cursor.getString(5), if (cursor.isNull(6)) null else cursor.getString(6)
                 )
             }
         }

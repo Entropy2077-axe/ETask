@@ -52,9 +52,14 @@ public class AgendaAdapter extends ResourceCursorAdapter {
     // Note: Formatter is not thread safe. Fine for now as it is only used by the main thread.
     private final Formatter mFormatter;
     private final StringBuilder mStringBuilder;
+    private final Context mContext;
+    private String mTimeZone;
+    private boolean mIs24Hour;
     private final Runnable mTZUpdater = new Runnable() {
         @Override
         public void run() {
+            mTimeZone = Utils.getTimeZone(mContext, null);
+            mIs24Hour = DateFormat.is24HourFormat(mContext);
             notifyDataSetChanged();
         }
     };
@@ -65,6 +70,7 @@ public class AgendaAdapter extends ResourceCursorAdapter {
     public AgendaAdapter(Context context, int resource) {
         super(context, resource, null);
 
+        mContext = context.getApplicationContext();
         mResources = context.getResources();
         mNoTitleLabel = mResources.getString(R.string.no_title_label);
         mDeclinedColor = DynamicThemeKt.getColor(context, "agenda_item_declined_color");
@@ -73,6 +79,8 @@ public class AgendaAdapter extends ResourceCursorAdapter {
         mWhereColor = DynamicThemeKt.getColor(context, "agenda_item_where_text_color");
         mStringBuilder = new StringBuilder(50);
         mFormatter = new Formatter(mStringBuilder, Locale.getDefault());
+        mTimeZone = Utils.getTimeZone(mContext, mTZUpdater);
+        mIs24Hour = DateFormat.is24HourFormat(mContext);
 
         COLOR_CHIP_ALL_DAY_HEIGHT = mResources.getInteger(R.integer.color_chip_all_day_height);
         COLOR_CHIP_HEIGHT = mResources.getInteger(R.integer.color_chip_height);
@@ -132,13 +140,11 @@ public class AgendaAdapter extends ResourceCursorAdapter {
 
         // Set the size of the color chip
         ViewGroup.LayoutParams params = holder.colorChip.getLayoutParams();
-        if (allDay) {
-            params.height = COLOR_CHIP_ALL_DAY_HEIGHT;
-        } else {
-            params.height = COLOR_CHIP_HEIGHT;
-
+        int desiredChipHeight = allDay ? COLOR_CHIP_ALL_DAY_HEIGHT : COLOR_CHIP_HEIGHT;
+        if (params.height != desiredChipHeight) {
+            params.height = desiredChipHeight;
+            holder.colorChip.setLayoutParams(params);
         }
-        holder.colorChip.setLayoutParams(params);
 
         // Deal with exchange events that the owner cannot respond to
         int canRespond = cursor.getInt(AgendaWindowAdapter.INDEX_CAN_ORGANIZER_RESPOND);
@@ -183,13 +189,13 @@ public class AgendaAdapter extends ResourceCursorAdapter {
         String whenString;
         // It's difficult to update all the adapters so just query this each
         // time we need to build the view.
-        String tzString = Utils.getTimeZone(context, mTZUpdater);
+        String tzString = mTimeZone;
         if (allDay) {
             tzString = Time.TIMEZONE_UTC;
         } else {
             flags = DateUtils.FORMAT_SHOW_TIME;
         }
-        if (DateFormat.is24HourFormat(context)) {
+        if (mIs24Hour) {
             flags |= DateUtils.FORMAT_24HOUR;
         }
         mStringBuilder.setLength(0);
@@ -198,14 +204,11 @@ public class AgendaAdapter extends ResourceCursorAdapter {
         if (!allDay && !TextUtils.equals(tzString, eventTz)) {
             String displayName;
             // Figure out if this is in DST
-            Time date = new Time(tzString);
-            date.set(begin);
-
             TimeZone tz = TimeZone.getTimeZone(tzString);
             if (tz == null || tz.getID().equals("GMT")) {
                 displayName = tzString;
             } else {
-                displayName = tz.getDisplayName(false, TimeZone.SHORT);
+                displayName = tz.getDisplayName(tz.getOffset(begin) != tz.getRawOffset(), TimeZone.SHORT);
             }
             whenString += " (" + displayName + ")";
         }
@@ -241,4 +244,3 @@ public class AgendaAdapter extends ResourceCursorAdapter {
         int julianDay;
     }
 }
-

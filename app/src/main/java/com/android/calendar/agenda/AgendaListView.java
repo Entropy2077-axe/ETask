@@ -44,6 +44,7 @@ public class AgendaListView extends ListView implements OnItemClickListener {
     private static final String TAG = "AgendaListView";
     private static final boolean DEBUG = false;
     private static final int EVENT_UPDATE_TIME = 300000;  // 5 minutes
+    private final Rect mReusableRect = new Rect();
 
     private AgendaWindowAdapter mWindowAdapter;
     private DeleteEventHelper mDeleteEventHelper;
@@ -236,7 +237,7 @@ public class AgendaListView extends ListView implements OnItemClickListener {
     }
 
     public View getFirstVisibleView() {
-        Rect r = new Rect();
+        Rect r = mReusableRect;
         int childCount = getChildCount();
         for (int i = 0; i < childCount; ++i) {
             View listItem = getChildAt(i);
@@ -300,7 +301,7 @@ public class AgendaListView extends ListView implements OnItemClickListener {
         if (mShowEventDetailsWithAgenda) {
             View v = getFirstVisibleView ();
             if (v != null) {
-                Rect r = new Rect ();
+                Rect r = mReusableRect;
                 v.getLocalVisibleRect(r);
                 if (r.bottom - r.top <=  mWindowAdapter.getStickyHeaderHeight()) {
                     position ++;
@@ -383,7 +384,7 @@ public class AgendaListView extends ListView implements OnItemClickListener {
         View firstVisibleItem = getFirstVisibleView();
 
         if (firstVisibleItem != null) {
-            Rect r = new Rect();
+            Rect r = mReusableRect;
             firstVisibleItem.getLocalVisibleRect(r);
             // if r.top is < 0, getChildAt(0) and getFirstVisiblePosition() is
             // returning an item above the first visible item.

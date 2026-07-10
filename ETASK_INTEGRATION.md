@@ -20,6 +20,11 @@ the upstream Etar license and notices.
   requests. Users can inspect and clear this memory from AI Settings.
 - Task and chat screens use recycling list adapters; database, calendar, and network work runs
   away from the main thread to reduce UI stalls.
+- AI reads the complete device calendar catalog and assigns generated items to a writable calendar
+  by subject, allowing offline calendars such as humanities, mathematics, or physics to act as
+  categories. Locations and RFC5545 recurrence rules are preserved when calendar events are saved.
+- Month view caches expensive event DNA drawing data per week and size. Agenda rows cache timezone
+  and clock-format configuration and avoid redundant layout work during scrolling.
 
 ## Build
 

@@ -99,6 +99,7 @@ public class SimpleDayPickerFragment extends ListFragment implements OnScrollLis
     protected Time mFirstDayOfMonth = new Time();
     // The first day that is visible in the view
     protected Time mFirstVisibleDay = new Time();
+    private int mLastFirstVisibleJulianDay = Integer.MIN_VALUE;
     // The name of the month to display
     protected TextView mMonthName;
     // The last name announced by accessibility
@@ -466,7 +467,11 @@ public class SimpleDayPickerFragment extends ListFragment implements OnScrollLis
 
         // Figure out where we are
         long currScroll = view.getFirstVisiblePosition() * child.getHeight() - child.getBottom();
-        mFirstVisibleDay.setJulianDay(child.getFirstJulianDay());
+        int firstVisibleJulianDay = child.getFirstJulianDay();
+        if (firstVisibleJulianDay != mLastFirstVisibleJulianDay) {
+            mFirstVisibleDay.setJulianDay(firstVisibleJulianDay);
+            mLastFirstVisibleJulianDay = firstVisibleJulianDay;
+        }
 
         // If we have moved since our last call update the direction
         if (currScroll < mPreviousScrollPosition) {

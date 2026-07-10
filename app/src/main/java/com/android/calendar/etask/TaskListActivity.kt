@@ -112,7 +112,10 @@ class TaskListActivity : AppCompatActivity() {
             holder.title.paintFlags = if (task.completed) holder.title.paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
             else holder.title.paintFlags and Paint.STRIKE_THRU_TEXT_FLAG.inv()
             holder.detail.text = listOfNotNull(
-                task.due?.let { "截止：$it" }, task.notes.takeIf { it.isNotBlank() }
+                task.category.takeIf { it.isNotBlank() }?.let { "分类：$it" },
+                task.due?.let { "截止：$it" },
+                task.recurrenceRule?.let { "周期：${recurrenceLabel(it)}" },
+                task.notes.takeIf { it.isNotBlank() }
             ).joinToString(" · ")
             holder.detail.visibility = if (holder.detail.text.isBlank()) View.GONE else View.VISIBLE
             holder.check.setOnCheckedChangeListener { _, checked ->
@@ -131,6 +134,14 @@ class TaskListActivity : AppCompatActivity() {
     }
 
     private data class TaskHolder(val check: CheckBox, val title: TextView, val detail: TextView, val delete: Button)
+
+    private fun recurrenceLabel(rule: String): String = when {
+        "FREQ=DAILY" in rule -> "每天"
+        "FREQ=WEEKLY" in rule -> "每周"
+        "FREQ=MONTHLY" in rule -> "每月"
+        "FREQ=YEARLY" in rule -> "每年"
+        else -> rule
+    }
 
     override fun onDestroy() { scope.cancel(); database.close(); super.onDestroy() }
     override fun onOptionsItemSelected(item: MenuItem): Boolean {

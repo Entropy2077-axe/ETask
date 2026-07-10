@@ -43,6 +43,19 @@ data class PlannedItem(
     val end: String?,
     val due: String?,
     val allDay: Boolean,
+    val location: String,
+    val isRecurring: Boolean,
+    val recurrenceRule: String?,
+    val calendarId: Long?,
+    val calendarName: String,
+)
+
+private data class DeviceCalendar(
+    val id: Long,
+    val name: String,
+    val account: String,
+    val color: Int,
+    val writable: Boolean,
 )
 
 private data class AiTurn(val reply: String, val items: List<PlannedItem>, val memory: String)
@@ -124,6 +137,11 @@ class AiAssistantActivity : AppCompatActivity() {
     private fun sendMessage() {
         val text = input.text.toString().trim()
         if (text.isEmpty() || !sendButton.isEnabled) return
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR), 42)
+            status.text = "需要日历权限才能读取分类，请授权后再次发送"
+            return
+        }
         input.text.clear()
         val optimistic = ChatMessage(-System.nanoTime(), "user", text, System.currentTimeMillis())
         adapter.add(optimistic)
@@ -134,7 +152,7 @@ class AiAssistantActivity : AppCompatActivity() {
                 withContext(Dispatchers.IO) {
                     database.addChat("user", text)
                     val memory = database.getHabitMemory()
-                    val turn = callAi(database.recentChat(16), memory)
+                    val turn = callAi(database.recentChat(16), memory, loadCalendars())
                     val visibleReply = buildConversationReply(turn)
                     val savedReply = database.addChat("assistant", visibleReply)
                     if (turn.memory.isNotBlank() && turn.memory != memory) {
@@ -158,16 +176,21 @@ class AiAssistantActivity : AppCompatActivity() {
         }
     }
 
-    private fun callAi(history: List<ChatMessage>, memory: String): AiTurn {
+    private fun callAi(history: List<ChatMessage>, memory: String, calendars: List<DeviceCalendar>): AiTurn {
         val prefs = getSharedPreferences(AiPreferences.FILE, Context.MODE_PRIVATE)
         val base = prefs.getString(AiPreferences.BASE_URL, AiPreferences.DEFAULT_BASE).orEmpty().trimEnd('/')
         val key = prefs.getString(AiPreferences.API_KEY, "").orEmpty()
         val model = prefs.getString(AiPreferences.MODEL, AiPreferences.DEFAULT_MODEL).orEmpty()
         if (key.isBlank()) error("请先在 AI 设置中填写 API Key")
         val now = ZonedDateTime.now()
+        val calendarCatalog = calendars.joinToString("\n") {
+            "- id=${it.id}；名称=${it.name}；账户=${it.account}；${if (it.writable) "可写" else "只读"}"
+        }.ifBlank { "- 当前设备没有日历" }
         val system = """你是中文任务规划助手，通过多轮对话帮助用户创建待办和日程。
 当前时间：$now；时区：${ZoneId.systemDefault()}。
 已记住的用户习惯：${memory.ifBlank { "暂无" }}
+设备上的全部日历：
+$calendarCatalog
 
 规则：
 1. 始终用简体中文回复。
@@ -176,9 +199,13 @@ class AiAssistantActivity : AppCompatActivity() {
 4. 相对日期必须转换为带时区的 ISO-8601 时间。日程未说明时长时优先使用已记住习惯，否则默认 1 小时。
 5. memory 只记录稳定、可复用的偏好，例如常用开始时间、默认时长、工作日、提醒或任务分类习惯。不要记录一次性事件、隐私内容或推测。没有新习惯时原样返回已有记忆。
 6. reply 必须概括当前理解；有 items 时清楚告诉用户可以保存或继续修改。
+7. 从对话中提取地点到 location。没有地点时返回空字符串。
+8. 识别“每天、每周、每月、工作日、每周几”等周期活动。周期活动设置 isRecurring=true，并生成合法 RFC5545 RRULE，例如 FREQ=WEEKLY;BYDAY=MO,WE。非周期活动 recurrenceRule 返回 null。
+9. 根据内容从日历名称推断分类，例如数学内容优先选择“数学类”。calendarId 必须来自上面的设备日历且必须可写；calendarName 必须与选择的日历名称一致。无法判断时选择最通用的可写日历，不要编造 ID。
+10. title 必须是精简的动作或活动名称，建议不超过 12 个汉字，不包含日期、时间、地点等已在其他字段表达的信息。
 
 只返回合法 JSON，不要 Markdown：
-{"reply":"中文回复","memory":"精炼的习惯摘要","items":[{"type":"task|event","title":"标题","description":"说明","start":"ISO-8601 或 null","end":"ISO-8601 或 null","due":"ISO-8601 或 null","allDay":false}]}"""
+{"reply":"中文回复","memory":"精炼的习惯摘要","items":[{"type":"task|event","title":"精简标题","description":"说明","start":"ISO-8601 或 null","end":"ISO-8601 或 null","due":"ISO-8601 或 null","allDay":false,"location":"地点或空字符串","isRecurring":false,"recurrenceRule":"RFC5545 RRULE 或 null","calendarId":设备日历ID,"calendarName":"日历名称"}]}"""
         val messages = JSONArray().put(JSONObject().put("role", "system").put("content", system))
         history.forEach { message ->
             messages.put(JSONObject().put("role", message.role).put("content", message.content))
@@ -209,10 +236,14 @@ class AiAssistantActivity : AppCompatActivity() {
             val array = json.optJSONArray("items") ?: JSONArray()
             val items = (0 until array.length()).map { index ->
                 val item = array.getJSONObject(index)
+                val recurrence = item.nullableString("recurrenceRule")?.sanitizeRRule()
                 PlannedItem(
-                    item.optString("type", "task").lowercase(), item.getString("title"),
+                    item.optString("type", "task").lowercase(), item.getString("title").trim().take(16),
                     item.optString("description"), item.nullableString("start"),
-                    item.nullableString("end"), item.nullableString("due"), item.optBoolean("allDay", false)
+                    item.nullableString("end"), item.nullableString("due"), item.optBoolean("allDay", false),
+                    item.optString("location"), item.optBoolean("isRecurring", false) || recurrence != null,
+                    recurrence,
+                    item.nullableLong("calendarId"), item.optString("calendarName")
                 )
             }
             return AiTurn(json.optString("reply", "请继续说明你的安排。"), items, json.optString("memory", memory))
@@ -224,8 +255,14 @@ class AiAssistantActivity : AppCompatActivity() {
     private fun buildConversationReply(turn: AiTurn): String {
         if (turn.items.isEmpty()) return turn.reply
         return turn.reply + "\n" + turn.items.joinToString("\n") { item ->
-            if (item.type == "event") "• 日程：${item.title}（${item.start.orEmpty()} 至 ${item.end.orEmpty()}）"
-            else "• 任务：${item.title}${item.due?.let { "（截止 $it）" }.orEmpty()}"
+            val extras = listOfNotNull(
+                item.calendarName.takeIf { it.isNotBlank() }?.let { "分类：$it" },
+                item.location.takeIf { it.isNotBlank() }?.let { "地点：$it" },
+                item.recurrenceRule?.let { "周期：$it" }
+            ).joinToString("，")
+            val suffix = if (extras.isBlank()) "" else "；$extras"
+            if (item.type == "event") "• 日程：${item.title}（${item.start.orEmpty()} 至 ${item.end.orEmpty()}$suffix）"
+            else "• 任务：${item.title}${item.due?.let { "（截止 $it$suffix）" } ?: if (suffix.isBlank()) "" else "（${suffix.removePrefix("；")}）"}"
         }
     }
 
@@ -257,7 +294,12 @@ class AiAssistantActivity : AppCompatActivity() {
             runCatching {
                 withContext(Dispatchers.IO) {
                     saving.forEach { item ->
-                        if (item.type == "event") saveEvent(item) else database.add(item.title, item.description, item.due)
+                        if (item.type == "event") saveEvent(item) else database.add(
+                            item.title,
+                            listOf(item.description, item.location.takeIf { it.isNotBlank() }?.let { "地点：$it" })
+                                .filterNotNull().filter { it.isNotBlank() }.joinToString("\n"),
+                            item.due, item.calendarName, item.recurrenceRule
+                        )
                     }
                     database.addChat("assistant", "已保存 ${saving.size} 项安排。你可以继续告诉我下一项计划。")
                 }
@@ -275,28 +317,53 @@ class AiAssistantActivity : AppCompatActivity() {
     }
 
     private fun saveEvent(item: PlannedItem) {
-        val calendarId = firstWritableCalendar() ?: error("没有可写入的日历")
+        val calendars = loadCalendars()
+        val calendarId = calendars.firstOrNull { it.id == item.calendarId && it.writable }?.id
+            ?: calendars.firstOrNull { it.writable && it.name == item.calendarName }?.id
+            ?: calendars.firstOrNull { it.writable }?.id
+            ?: error("没有可写入的日历")
         val start = parseTime(item.start ?: error("日程缺少开始时间"))
         val end = parseTime(item.end ?: item.start ?: error("日程缺少结束时间"))
         val values = ContentValues().apply {
             put(CalendarContract.Events.CALENDAR_ID, calendarId)
             put(CalendarContract.Events.TITLE, item.title)
             put(CalendarContract.Events.DESCRIPTION, item.description)
+            put(CalendarContract.Events.EVENT_LOCATION, item.location)
             put(CalendarContract.Events.DTSTART, start)
-            put(CalendarContract.Events.DTEND, maxOf(end, start + 30 * 60 * 1000))
             put(CalendarContract.Events.EVENT_TIMEZONE, ZoneId.systemDefault().id)
             put(CalendarContract.Events.ALL_DAY, if (item.allDay) 1 else 0)
+            val recurrence = item.recurrenceRule?.takeIf { item.isRecurring }
+            if (recurrence != null) {
+                val durationMillis = maxOf(end - start, 30 * 60 * 1000L)
+                put(CalendarContract.Events.DURATION, if (item.allDay) "P1D" else "P${durationMillis / 1000}S")
+                put(CalendarContract.Events.RRULE, recurrence)
+            } else {
+                put(CalendarContract.Events.DTEND, maxOf(end, start + 30 * 60 * 1000))
+            }
         }
         contentResolver.insert(CalendarContract.Events.CONTENT_URI, values) ?: error("系统日历拒绝写入")
     }
 
-    private fun firstWritableCalendar(): Long? {
-        val selection = "${CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL} >= ? AND ${CalendarContract.Calendars.VISIBLE} = 1"
+    private fun loadCalendars(): List<DeviceCalendar> {
+        val result = ArrayList<DeviceCalendar>()
         contentResolver.query(
-            CalendarContract.Calendars.CONTENT_URI, arrayOf(CalendarContract.Calendars._ID),
-            selection, arrayOf(CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR.toString()), null
-        )?.use { if (it.moveToFirst()) return it.getLong(0) }
-        return null
+            CalendarContract.Calendars.CONTENT_URI,
+            arrayOf(
+                CalendarContract.Calendars._ID,
+                CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
+                CalendarContract.Calendars.ACCOUNT_NAME,
+                CalendarContract.Calendars.CALENDAR_COLOR,
+                CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,
+            ), null, null, CalendarContract.Calendars.CALENDAR_DISPLAY_NAME + " COLLATE NOCASE"
+        )?.use { cursor ->
+            while (cursor.moveToNext()) {
+                result += DeviceCalendar(
+                    cursor.getLong(0), cursor.getString(1).orEmpty(), cursor.getString(2).orEmpty(),
+                    cursor.getInt(3), cursor.getInt(4) >= CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR
+                )
+            }
+        }
+        return result
     }
 
     private fun parseTime(value: String): Long = runCatching { OffsetDateTime.parse(value).toInstant().toEpochMilli() }
@@ -381,3 +448,11 @@ class AiAssistantActivity : AppCompatActivity() {
 
 private fun JSONObject.nullableString(key: String): String? =
     if (isNull(key)) null else optString(key).takeIf { it.isNotBlank() && it != "null" }
+
+private fun JSONObject.nullableLong(key: String): Long? =
+    if (isNull(key) || !has(key)) null else optLong(key).takeIf { it > 0 }
+
+private fun String.sanitizeRRule(): String? {
+    val value = trim().removePrefix("RRULE:").uppercase().replace("\n", "").replace("\r", "")
+    return value.takeIf { it.startsWith("FREQ=") && it.length <= 240 }
+}

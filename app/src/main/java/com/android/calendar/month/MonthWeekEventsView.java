@@ -155,6 +155,10 @@ public class MonthWeekEventsView extends SimpleWeekView {
     protected int mDaySeparatorInnerColor;
     protected int mTodayAnimateColor;
     HashMap<Integer, Utils.DNAStrand> mDna = null;
+    private ArrayList<Event> mDnaSource;
+    private int mDnaFirstJulianDay = Integer.MIN_VALUE;
+    private int mDnaCachedWidth = -1;
+    private int mDnaCachedHeight = -1;
     private int mClickedDayIndex = -1;
     private int mClickedDayColor;
     private boolean mAnimateToday;
@@ -196,6 +200,11 @@ public class MonthWeekEventsView extends SimpleWeekView {
             // clear the cached set of events since we're ready to build it now
             mUnsortedEvents = null;
         }
+        if (!mShowDetailsInMonth && mDna != null && mDnaSource == unsortedEvents
+                && mDnaFirstJulianDay == mFirstJulianDay && mDnaCachedWidth == mWidth
+                && mDnaCachedHeight == mHeight) {
+            return;
+        }
         // Create the drawing coordinates for dna
         if (!mShowDetailsInMonth) {
             int numDays = mEvents.size();
@@ -203,7 +212,9 @@ public class MonthWeekEventsView extends SimpleWeekView {
 
             mDnaAllDayWidth = effectiveWidth / numDays - 2 * mDnaSidePadding;
             mDNAAllDayPaint.setStrokeWidth(mDnaAllDayWidth);
-            mDayXs = new int[numDays];
+            if (mDayXs == null || mDayXs.length != numDays) {
+                mDayXs = new int[numDays];
+            }
             for (int day = 0; day < numDays; day++) {
                 mDayXs[day] = computeDayLeftPosition(day) + mDnaWidth / 2 + mDnaSidePadding;
 
@@ -213,6 +224,10 @@ public class MonthWeekEventsView extends SimpleWeekView {
             int bottom = mHeight - mDnaMargin;
             mDna = Utils.createDNAStrands(mFirstJulianDay, unsortedEvents, top, bottom,
                     mDnaMinSegmentHeight, mDayXs, getContext());
+            mDnaSource = unsortedEvents;
+            mDnaFirstJulianDay = mFirstJulianDay;
+            mDnaCachedWidth = mWidth;
+            mDnaCachedHeight = mHeight;
         }
     }
 
