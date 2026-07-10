@@ -1236,6 +1236,23 @@ public class EditEventView implements View.OnClickListener, DialogInterface.OnCa
             mCalendarsSpinner.setEnabled(mode == Utils.MODIFY_ALL);
         }
         setAllDayViewsVisibility(mAllDayCheckBox.isChecked());
+        hideRemovedFields();
+    }
+
+    /** ETask keeps event creation focused on title, time, category, location and reminders. */
+    private void hideRemovedFields() {
+        int[] removedViewIds = {
+                R.id.add_attendees_group, R.id.attendees_icon, R.id.add_attendees_row,
+                R.id.url_icon, R.id.url_row,
+                R.id.availability_icon, R.id.availability,
+                R.id.visibility_icon, R.id.visibility, R.id.view6
+        };
+        for (int id : removedViewIds) {
+            View removedView = mView.findViewById(id);
+            if (removedView != null) {
+                removedView.setVisibility(View.GONE);
+            }
+        }
     }
 
     public void setModification(int modifyWhich) {

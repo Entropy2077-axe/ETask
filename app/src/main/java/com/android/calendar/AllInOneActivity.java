@@ -298,6 +298,9 @@ public class AllInOneActivity extends AbstractCalendarActivity implements EventH
         if (viewType == -1 || viewType > ViewType.MAX_VALUE) {
             viewType = Utils.getViewTypeFromIntentAndSharedPref(this);
         }
+        if (viewType != ViewType.EDIT) {
+            viewType = ViewType.WEEK;
+        }
         mTimeZone = Utils.getTimeZone(this, mHomeTimeUpdater);
         Time t = new Time(mTimeZone);
         t.set(timeMillis);
@@ -396,7 +399,7 @@ public class AllInOneActivity extends AbstractCalendarActivity implements EventH
                 if (mCurrentView == ViewType.EDIT || mBackToPreviousView) {
                     mController.sendEvent(this, EventType.GO_TO, null, null, -1, mPreviousView);
                 } else {
-                    int defaultStartView = Utils.getViewTypeFromIntentAndSharedPref(mActivity);
+                    int defaultStartView = ViewType.WEEK;
 
                     // If the current view is the default one, quit app. If not, go back to default view.
                     if (mCurrentView == defaultStartView
@@ -504,7 +507,7 @@ public class AllInOneActivity extends AbstractCalendarActivity implements EventH
         setSupportActionBar(mToolbar);
 
         mToolbar.setNavigationOnClickListener(v -> AllInOneActivity.this.openDrawer());
-        mToolbar.setOnClickListener(v -> goToDate());
+        mToolbar.setOnClickListener(null);
         mActionBar = getSupportActionBar();
         if (mActionBar == null) return;
         mActionBar.setDisplayHomeAsUpEnabled(true);
@@ -863,11 +866,9 @@ public class AllInOneActivity extends AbstractCalendarActivity implements EventH
 
 
         MenuItem menuItem = menu.findItem(R.id.action_today);
-
-        // replace the default top layer drawable of the today icon with a
-        // custom drawable that shows the day of the month of today
-        LayerDrawable icon = (LayerDrawable) menuItem.getIcon();
-        Utils.setTodayIcon(icon, this, mTimeZone);
+        if (menuItem != null && menuItem.getIcon() instanceof LayerDrawable) {
+            Utils.setTodayIcon((LayerDrawable) menuItem.getIcon(), this, mTimeZone);
+        }
 
         // Handle warning for disabling battery optimizations
         boolean doNotCheckBatteryOptimization = Utils.getSharedPreference(getApplicationContext(), GeneralPreferences.KEY_DO_NOT_CHECK_BATTERY_OPTIMIZATION, false);
@@ -971,8 +972,6 @@ public class AllInOneActivity extends AbstractCalendarActivity implements EventH
             if (mCurrentView != ViewType.AGENDA) {
                 mController.sendEvent(this, EventType.GO_TO, null, null, -1, ViewType.AGENDA);
             }
-        } else if (itemId == R.id.action_tasks) {
-            startActivity(new Intent(this, com.android.calendar.etask.TaskListActivity.class));
         } else if (itemId == R.id.action_ai_assistant) {
             startActivity(new Intent(this, com.android.calendar.etask.AiAssistantActivity.class));
         } else if (itemId == R.id.action_ai_settings) {

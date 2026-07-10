@@ -282,12 +282,12 @@
     <string name="preferences_list_calendar_summary_sync_off">未同步</string>
     <string name="preferences_list_calendar_summary_invisible">活动未显示</string>
     <string name="preferences_list_general">通用设置</string>
-    <string name="preferences_list_add_offline">添加离线日历</string>
-    <string name="preferences_list_add_offline_title">添加离线日历</string>
-    <string name="preferences_list_add_offline_error_empty">输入日历名称！</string>
-    <string name="preferences_list_add_offline_message">离线日历不会同步到云服务，只能在手机上使用。</string>
-    <string name="preferences_list_add_offline_button">添加日历</string>
-    <string name="preferences_list_add_offline_name">名称</string>
+    <string name="preferences_list_add_offline">添加日程分类</string>
+    <string name="preferences_list_add_offline_title">新建日程分类</string>
+    <string name="preferences_list_add_offline_error_empty">请输入分类名称</string>
+    <string name="preferences_list_add_offline_message">日程分类仅保存在当前设备，不会同步到云服务。</string>
+    <string name="preferences_list_add_offline_button">添加分类</string>
+    <string name="preferences_list_add_offline_name">分类名称</string>
     <string name="preferences_list_add_offline_cancel">取消</string>
     <string name="preferences_calendar_color_warning_title">警告</string>
     <string name="preferences_calendar_color_warning_message">再次同步日历时，可能会还原更改颜色。
@@ -298,7 +298,7 @@
     <string name="preferences_calendar_delete_delete">删除日历</string>
     <string name="preferences_calendar_delete_cancel">取消</string>
     <string name="preferences_menu_about">关于 Etar</string>
-    <string name="offline_account_name">离线日历</string>
+    <string name="offline_account_name">日程分类</string>
     <string name="app_copyright">© 2015-<xliff:g>%1$s</xliff:g> The Etar Project. Portions © 2005-<xliff:g>%1$s</xliff:g> The Android Open Source Project.</string>
     <string name="authors">作者</string>
     <string name="changelog">更新日志</string>

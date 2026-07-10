@@ -34,6 +34,7 @@ import java.net.URL
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
+import ws.xsoh.etar.R
 
 data class PlannedItem(
     val type: String,
@@ -71,6 +72,7 @@ class AiAssistantActivity : AppCompatActivity() {
     private lateinit var saveButton: Button
     private lateinit var chatList: ListView
     private lateinit var adapter: ChatAdapter
+    private lateinit var apiSetupCard: AiInlineConfigView
     private var planned = emptyList<PlannedItem>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,6 +84,10 @@ class AiAssistantActivity : AppCompatActivity() {
 
         val root = verticalLayout().apply { pad(10) }
         memoryStatus = TextView(this).apply { textSize = 12f; text = "正在读取习惯记忆…" }
+        apiSetupCard = AiInlineConfigView(this) {
+            sendButton.isEnabled = true
+            status.text = "API 已连接，可以开始对话"
+        }
         chatList = ListView(this).apply {
             divider = null
             transcriptMode = ListView.TRANSCRIPT_MODE_ALWAYS_SCROLL
@@ -108,10 +114,12 @@ class AiAssistantActivity : AppCompatActivity() {
         }
         sendButton = Button(this).apply {
             text = "发送"
+            isEnabled = isApiConfigured()
             setOnClickListener { sendMessage() }
         }
         inputRow.addView(input); inputRow.addView(sendButton)
         root.addView(memoryStatus)
+        root.addView(apiSetupCard)
         root.addView(chatList, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(preview); root.addView(saveButton); root.addView(status); root.addView(inputRow)
         setContentView(root)
@@ -196,6 +204,7 @@ $calendarCatalog
 1. 始终用简体中文回复。
 2. 如果日期、时间或意图存在关键歧义，先提出一个简短明确的问题，items 返回空数组；不要擅自猜测。
 3. 信息足够时给出可保存方案。固定时间段用 event，待办或截止日期用 task。
+   task 也会显示在周视图中，因此必须提供 due；缺少截止时间时先追问。
 4. 相对日期必须转换为带时区的 ISO-8601 时间。日程未说明时长时优先使用已记住习惯，否则默认 1 小时。
 5. memory 只记录稳定、可复用的偏好，例如常用开始时间、默认时长、工作日、提醒或任务分类习惯。不要记录一次性事件、隐私内容或推测。没有新习惯时原样返回已有记忆。
 6. reply 必须概括当前理解；有 items 时清楚告诉用户可以保存或继续修改。
@@ -293,14 +302,7 @@ $calendarCatalog
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    saving.forEach { item ->
-                        if (item.type == "event") saveEvent(item) else database.add(
-                            item.title,
-                            listOf(item.description, item.location.takeIf { it.isNotBlank() }?.let { "地点：$it" })
-                                .filterNotNull().filter { it.isNotBlank() }.joinToString("\n"),
-                            item.due, item.calendarName, item.recurrenceRule
-                        )
-                    }
+                    saving.forEach { item -> saveEvent(item) }
                     database.addChat("assistant", "已保存 ${saving.size} 项安排。你可以继续告诉我下一项计划。")
                 }
             }.onSuccess {
@@ -322,8 +324,8 @@ $calendarCatalog
             ?: calendars.firstOrNull { it.writable && it.name == item.calendarName }?.id
             ?: calendars.firstOrNull { it.writable }?.id
             ?: error("没有可写入的日历")
-        val start = parseTime(item.start ?: error("日程缺少开始时间"))
-        val end = parseTime(item.end ?: item.start ?: error("日程缺少结束时间"))
+        val start = parseTime(item.start ?: item.due ?: error("安排缺少时间"))
+        val end = item.end?.let(::parseTime) ?: start + 30 * 60 * 1000L
         val values = ContentValues().apply {
             put(CalendarContract.Events.CALENDAR_ID, calendarId)
             put(CalendarContract.Events.TITLE, item.title)
@@ -354,7 +356,9 @@ $calendarCatalog
                 CalendarContract.Calendars.ACCOUNT_NAME,
                 CalendarContract.Calendars.CALENDAR_COLOR,
                 CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,
-            ), null, null, CalendarContract.Calendars.CALENDAR_DISPLAY_NAME + " COLLATE NOCASE"
+            ), CalendarContract.Calendars.ACCOUNT_TYPE + " = ?",
+            arrayOf(CalendarContract.ACCOUNT_TYPE_LOCAL),
+            CalendarContract.Calendars.CALENDAR_DISPLAY_NAME + " COLLATE NOCASE"
         )?.use { cursor ->
             while (cursor.moveToNext()) {
                 result += DeviceCalendar(
@@ -383,7 +387,8 @@ $calendarCatalog
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menu.add(0, MENU_SETTINGS, 0, "AI 设置")
-        menu.add(0, MENU_CLEAR_CHAT, 1, "清空对话")
+            .setIcon(R.drawable.outline_settings)
+            .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
         return true
     }
 
@@ -391,7 +396,6 @@ $calendarCatalog
         when (item.itemId) {
             android.R.id.home -> finish()
             MENU_SETTINGS -> startActivity(Intent(this, AiSettingsActivity::class.java))
-            MENU_CLEAR_CHAT -> clearConversation()
             else -> return super.onOptionsItemSelected(item)
         }
         return true
@@ -405,6 +409,17 @@ $calendarCatalog
             adapter.submit(emptyList())
             loadConversation()
             status.text = "对话已清空，习惯记忆仍然保留"
+        }
+    }
+
+    private fun isApiConfigured(): Boolean = getSharedPreferences(AiPreferences.FILE, Context.MODE_PRIVATE)
+        .getString(AiPreferences.API_KEY, "").orEmpty().isNotBlank()
+
+    override fun onResume() {
+        super.onResume()
+        if (::apiSetupCard.isInitialized) {
+            apiSetupCard.refreshVisibility()
+            sendButton.isEnabled = isApiConfigured()
         }
     }
 
@@ -442,7 +457,6 @@ $calendarCatalog
 
     companion object {
         private const val MENU_SETTINGS = 1001
-        private const val MENU_CLEAR_CHAT = 1002
     }
 }
 

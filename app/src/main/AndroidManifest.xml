@@ -97,10 +97,6 @@
         </activity-alias>
 
         <activity
-            android:name="com.android.calendar.etask.TaskListActivity"
-            android:label="@string/tasks_title"
-            android:parentActivityName="com.android.calendar.AllInOneActivity" />
-        <activity
             android:name="com.android.calendar.etask.AiAssistantActivity"
             android:label="@string/ai_assistant_title"
             android:windowSoftInputMode="adjustResize"

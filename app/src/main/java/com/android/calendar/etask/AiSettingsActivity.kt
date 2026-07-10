@@ -70,6 +70,13 @@ class AiSettingsActivity : AppCompatActivity() {
         test.setOnClickListener { fetchModels(true) }
         root.addView(save); root.addView(pull); root.addView(test); root.addView(status)
 
+        root.addView(heading("会话管理"))
+        val clearConversation = Button(this).apply {
+            text = "清除会话"
+            setOnClickListener { confirmClearConversation() }
+        }
+        root.addView(clearConversation)
+
         root.addView(heading("用户习惯记忆"))
         root.addView(TextView(this).apply { text = "AI 只保存稳定、可复用的时间和任务偏好。清空对话不会删除习惯。" })
         memory = TextView(this).apply { pad(10) }
@@ -141,6 +148,18 @@ class AiSettingsActivity : AppCompatActivity() {
                     withContext(Dispatchers.IO) { database.clearHabitMemory() }
                     loadMemory()
                     status.text = "习惯记忆已清除"
+                }
+            }.show()
+    }
+
+    private fun confirmClearConversation() {
+        AlertDialog.Builder(this).setTitle("清除会话")
+            .setMessage("将删除 AI 助手中的全部聊天记录，但不会删除习惯记忆。")
+            .setNegativeButton("取消", null)
+            .setPositiveButton("清除") { _, _ ->
+                scope.launch {
+                    withContext(Dispatchers.IO) { database.clearChat() }
+                    status.text = "会话已清除"
                 }
             }.show()
     }

@@ -25,6 +25,13 @@ the upstream Etar license and notices.
   categories. Locations and RFC5545 recurrence rules are preserved when calendar events are saved.
 - Month view caches expensive event DNA drawing data per week and size. Agenda rows cache timezone
   and clock-format configuration and avoid redundant layout work during scrolling.
+- The end-user calendar surface is intentionally reduced to week view. Day, month, agenda, and
+  local task screens are no longer reachable, and AI-created todos are saved into the selected
+  local schedule category so they remain visible in the week.
+- Calendar management and new-event selection expose local calendars only, under the user-facing
+  name "日程分类". Remote CalDAV, EteSync, and Phone calendar setup entry points are removed.
+- The AI assistant embeds API configuration when no key is present; successful connection hides
+  the setup card. Conversation and memory deletion are available from AI Settings.
 
 ## Build
 

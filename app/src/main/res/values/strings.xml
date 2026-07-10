@@ -794,16 +794,16 @@
     <string name="preferences_list_general">General settings</string>
     <string name="preferences_list_add_remote">Add CalDAV calendar</string>
     <string name="preferences_list_add_remote_etesync">Add EteSync calendar</string>
-    <string name="preferences_list_add_offline">Add offline calendar</string>
-    <string name="preferences_list_add_offline_title">Add offline calendar</string>
-    <string name="preferences_list_add_offline_error_empty">Enter a calendar name!</string>
-    <string name="preferences_list_add_offline_message">Offline calendars are NOT synchronized to a cloud service and only available on your phone.</string>
-    <string name="preferences_list_add_offline_button">Add calendar</string>
-    <string name="preferences_list_add_offline_name">Name</string>
-    <string name="preferences_list_add_offline_cancel">Cancel</string>
+    <string name="preferences_list_add_offline">添加日程分类</string>
+    <string name="preferences_list_add_offline_title">新建日程分类</string>
+    <string name="preferences_list_add_offline_error_empty">请输入分类名称</string>
+    <string name="preferences_list_add_offline_message">日程分类仅保存在当前设备，不会同步到云服务。</string>
+    <string name="preferences_list_add_offline_button">添加分类</string>
+    <string name="preferences_list_add_offline_name">分类名称</string>
+    <string name="preferences_list_add_offline_cancel">取消</string>
     <string name="preferences_menu_about">About Etar</string>
 
-    <string name="offline_account_name">Offline Calendar</string>
+    <string name="offline_account_name">日程分类</string>
     <string name="after_start_of_event">after start of event</string>
 
     <string name="pref_theme_default" translatable="false">light</string>
@@ -865,4 +865,5 @@
     <string name="ai_assistant_title">AI 任务助手</string>
     <string name="ai_settings_title">AI 设置</string>
     <string name="etask_app_name">ETask</string>
+    <string name="schedule_categories_title">日程分类</string>
 </resources>

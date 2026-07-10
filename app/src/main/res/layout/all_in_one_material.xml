@@ -42,6 +42,7 @@
             android:layout_margin="@dimen/fab_margin"
             android:backgroundTint="@color/colorAccent"
             android:contentDescription="@string/event_create"
+            android:visibility="gone"
             android:src="@drawable/ic_add_event"
             app:borderWidth="0dp"
             app:layout_anchorGravity="bottom|right|end"

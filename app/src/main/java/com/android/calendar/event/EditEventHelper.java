@@ -218,7 +218,8 @@ public class EditEventHelper {
     static final int CALENDARS_INDEX_ACCOUNT_TYPE = 12;
 
     static final String CALENDARS_WHERE_WRITEABLE_VISIBLE = Calendars.CALENDAR_ACCESS_LEVEL + ">="
-            + Calendars.CAL_ACCESS_CONTRIBUTOR + " AND " + Calendars.VISIBLE + "=1";
+            + Calendars.CAL_ACCESS_CONTRIBUTOR + " AND " + Calendars.VISIBLE + "=1 AND "
+            + Calendars.ACCOUNT_TYPE + "='" + CalendarContract.ACCOUNT_TYPE_LOCAL + "'";
 
     /**
      * Query to find all calendars to which a recurrence can be moved to.
@@ -235,7 +236,7 @@ public class EditEventHelper {
         "(" + Calendars._ID + "=?) OR ("
             + Calendars.CALENDAR_ACCESS_LEVEL + ">=" + Calendars.CAL_ACCESS_CONTRIBUTOR
             + " AND " + Calendars.VISIBLE + "=1"
-            + " AND " + Calendars.ACCOUNT_TYPE + "!='" + CalendarContract.ACCOUNT_TYPE_LOCAL + "')";
+            + " AND " + Calendars.ACCOUNT_TYPE + "='" + CalendarContract.ACCOUNT_TYPE_LOCAL + "')";
 
     static final String CALENDARS_WHERE = Calendars._ID + "=?";
 

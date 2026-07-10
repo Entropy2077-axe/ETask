@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="day_menu_item" type="id" />
+    <item name="month_menu_item" type="id" />
+    <item name="agenda_menu_item" type="id" />
+    <item name="action_tasks" type="id" />
+    <item name="action_today" type="id" />
+    <item name="action_info" type="id" />
+    <item name="action_goto" type="id" />
+    <item name="action_import" type="id" />
+    <item name="action_view_settings" type="id" />
+    <item name="action_hide_controls" type="id" />
+</resources>

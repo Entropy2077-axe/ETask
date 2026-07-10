@@ -17,12 +17,9 @@
 
 package com.android.calendar.settings
 
-import android.content.Intent
 import android.graphics.drawable.Drawable
-import android.net.Uri
 import android.os.Bundle
 import android.view.View
-import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModelProvider
@@ -67,16 +64,16 @@ class MainListPreferences : PreferenceFragmentCompat() {
     private fun updateCalendarPreferences(screen: PreferenceScreen, allCalendars: List<Calendar>) {
         val newCalendars = mutableSetOf<Long>()
 
-        for (calendar in allCalendars) {
+        for (calendar in allCalendars.filter { it.isLocal }) {
             newCalendars.add(calendar.id)
 
             // add category per account if not already present
-            val accountCategoryUniqueKey = "account_category_${calendar.accountName}_${calendar.accountType}"
+            val accountCategoryUniqueKey = "schedule_categories"
             var accountCategory = screen.findPreference<PreferenceCategory>(accountCategoryUniqueKey)
             if (accountCategory == null) {
                 accountCategory = PreferenceCategory(requireContext()).apply {
                     key = accountCategoryUniqueKey
-                    title = calendar.accountName
+                    title = getString(R.string.schedule_categories_title)
                     icon = ContextCompat.getDrawable(requireContext(), R.drawable.outline_account_circle)
                     order = if (calendar.isLocal) 10 else 11 // show offline calendar first
                     isOrderingAsAdded = false // use alphabetic ordering for children
@@ -156,22 +153,6 @@ class MainListPreferences : PreferenceFragmentCompat() {
             icon = ContextCompat.getDrawable(requireContext(), R.drawable.outline_settings)
             fragment = GeneralPreferences::class.java.name
         }
-        val addCaldavPreference = Preference(requireContext()).apply {
-            title = getString(R.string.preferences_list_add_remote)
-            icon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_add)
-        }
-        addCaldavPreference.setOnPreferenceClickListener {
-            launchDavX5Login()
-            true
-        }
-        val addEtesyncPreference = Preference(requireContext()).apply {
-            title = getString(R.string.preferences_list_add_remote_etesync)
-            icon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_add)
-        }
-        addEtesyncPreference.setOnPreferenceClickListener {
-            launchAddEtesync()
-            true
-        }
         val addOfflinePreference = Preference(requireContext()).apply {
             title = getString(R.string.preferences_list_add_offline)
             icon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_add)
@@ -181,72 +162,12 @@ class MainListPreferences : PreferenceFragmentCompat() {
             true
         }
         screen.addPreference(generalPreference)
-        screen.addPreference(addCaldavPreference)
-        screen.addPreference(addEtesyncPreference)
         screen.addPreference(addOfflinePreference)
     }
 
     private fun addOfflineCalendar() {
         val dialog = AddOfflineCalendarDialogFragment()
         dialog.show(parentFragmentManager, "addOfflineCalendar")
-    }
-
-    /**
-     * Based on https://manual.davx5.com/integration.html
-     */
-    private fun launchDavX5Login() {
-        val davX5Intent = Intent().apply {
-            setClassName("at.bitfire.davdroid", "at.bitfire.davdroid.ui.setup.LoginActivity")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-
-        if (requireActivity().packageManager.resolveActivity(davX5Intent, 0) != null) {
-            startActivity(davX5Intent)
-        } else {
-            // DAVx5 is not installed
-            val installIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=at.bitfire.davdroid"))
-
-            // launch market
-            if (installIntent.resolveActivity(requireActivity().packageManager) != null) {
-                startActivity(installIntent)
-            } else {
-                // no f-droid market app or Play store installed -> launch browser for f-droid url
-                val downloadIntent = Intent(Intent.ACTION_VIEW,
-                        Uri.parse("https://f-droid.org/repository/browse/?fdid=at.bitfire.davdroid"))
-                if (downloadIntent.resolveActivity(requireActivity().packageManager) != null) {
-                    startActivity(downloadIntent)
-                } else {
-                    Toast.makeText(activity, "No browser available!", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
-
-    private fun launchAddEtesync() {
-        val packageManager = requireActivity().packageManager
-        val etesyncPackage = "com.etesync.syncadapter"
-        val etesyncIntent = packageManager.getLaunchIntentForPackage(etesyncPackage)
-
-        if (etesyncIntent != null) {
-            startActivity(etesyncIntent)
-        } else {
-            // EteSync is not installed
-            val installIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${etesyncPackage}"))
-
-            // launch market
-            if (installIntent.resolveActivity(packageManager) != null) {
-                startActivity(installIntent)
-            } else {
-                // no f-droid market app or Play store installed -> launch browser for f-droid url
-                val downloadIntent = Intent(Intent.ACTION_VIEW,
-                        Uri.parse("https://f-droid.org/repository/browse/?fdid=${etesyncPackage}"))
-                if (downloadIntent.resolveActivity(packageManager) != null) {
-                    startActivity(downloadIntent)
-                } else {
-                    Toast.makeText(activity, "No browser available!", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
     }
 
     override fun onResume() {
