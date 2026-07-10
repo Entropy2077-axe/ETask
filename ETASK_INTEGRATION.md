@@ -14,6 +14,12 @@ the upstream Etar license and notices.
 - Natural-language planning through `POST /chat/completions`, with a preview before changes.
 - AI tasks are stored locally; AI events are inserted into the first visible writable Android
   calendar after runtime permission is granted.
+- AI planning uses a multi-turn Chinese conversation. Ambiguous requests trigger a clarifying
+  question instead of silently guessing.
+- Stable user preferences are summarized into local habit memory and included in later planning
+  requests. Users can inspect and clear this memory from AI Settings.
+- Task and chat screens use recycling list adapters; database, calendar, and network work runs
+  away from the main thread to reduce UI stalls.
 
 ## Build
 

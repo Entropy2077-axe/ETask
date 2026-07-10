@@ -5,14 +5,19 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.provider.CalendarContract
+import android.view.Gravity
 import android.view.Menu
 import android.view.MenuItem
+import android.view.View
+import android.view.ViewGroup
+import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.ScrollView
+import android.widget.ListView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -40,141 +45,239 @@ data class PlannedItem(
     val allDay: Boolean,
 )
 
+private data class AiTurn(val reply: String, val items: List<PlannedItem>, val memory: String)
+
 class AiAssistantActivity : AppCompatActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private lateinit var prompt: EditText
+    private lateinit var database: TaskDatabase
+    private lateinit var input: EditText
+    private lateinit var sendButton: Button
     private lateinit var status: TextView
-    private lateinit var preview: LinearLayout
+    private lateinit var memoryStatus: TextView
+    private lateinit var preview: TextView
     private lateinit var saveButton: Button
+    private lateinit var chatList: ListView
+    private lateinit var adapter: ChatAdapter
     private var planned = emptyList<PlannedItem>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        title = "AI 任务助手"
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        val root = verticalLayout().apply { pad(18) }
-        root.addView(TextView(this).apply {
-            text = "Tell AI what you need, for example:\nTomorrow at 3 PM meet Alex for one hour, and remind me to send the proposal by Friday."
-            textSize = 15f
-        })
-        prompt = EditText(this).apply {
-            hint = "Describe tasks and events in natural language"
-            minLines = 4
-            gravity = android.view.Gravity.TOP
+        database = TaskDatabase(applicationContext)
+        adapter = ChatAdapter()
+
+        val root = verticalLayout().apply { pad(10) }
+        memoryStatus = TextView(this).apply { textSize = 12f; text = "正在读取习惯记忆…" }
+        chatList = ListView(this).apply {
+            divider = null
+            transcriptMode = ListView.TRANSCRIPT_MODE_ALWAYS_SCROLL
+            isStackFromBottom = true
+            adapter = this@AiAssistantActivity.adapter
         }
-        val parse = Button(this).apply { text = "Create plan with AI" }
-        status = TextView(this).apply { pad(8) }
-        preview = verticalLayout()
-        saveButton = Button(this).apply { text = "Save all to ETask"; isEnabled = false }
-        parse.setOnClickListener { generate() }
-        saveButton.setOnClickListener { saveAll() }
-        root.addView(prompt); root.addView(parse); root.addView(status)
-        root.addView(heading("Preview")); root.addView(preview); root.addView(saveButton)
-        setContentView(ScrollView(this).apply { addView(root) })
+        preview = TextView(this).apply {
+            textSize = 14f
+            visibility = View.GONE
+            pad(8)
+        }
+        saveButton = Button(this).apply {
+            text = "保存当前方案"
+            isEnabled = false
+            visibility = View.GONE
+            setOnClickListener { saveAll() }
+        }
+        status = TextView(this).apply { textSize = 12f }
+        val inputRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
+        input = EditText(this).apply {
+            hint = "继续对话，例如：改到周五下午三点"
+            maxLines = 4
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        sendButton = Button(this).apply {
+            text = "发送"
+            setOnClickListener { sendMessage() }
+        }
+        inputRow.addView(input); inputRow.addView(sendButton)
+        root.addView(memoryStatus)
+        root.addView(chatList, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(preview); root.addView(saveButton); root.addView(status); root.addView(inputRow)
+        setContentView(root)
+        loadConversation()
     }
 
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menu.add("AI settings").setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER)
-        return true
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        if (item.itemId == android.R.id.home) { finish(); return true }
-        if (item.title == "AI settings") { startActivity(Intent(this, AiSettingsActivity::class.java)); return true }
-        return super.onOptionsItemSelected(item)
-    }
-
-    private fun generate() {
-        if (prompt.text.toString().isBlank()) { status.text = "Please enter a request"; return }
-        status.text = "DeepSeek is planning…"
-        saveButton.isEnabled = false
+    private fun loadConversation() {
         scope.launch {
-            runCatching { withContext(Dispatchers.IO) { callAi(prompt.text.toString()) } }
-                .onSuccess { items -> planned = items; renderPreview(); status.text = "Review the plan before saving" }
-                .onFailure { status.text = "AI request failed: ${it.message}" }
+            val state = withContext(Dispatchers.IO) {
+                var messages = database.recentChat(50)
+                if (messages.isEmpty()) {
+                    database.addChat("assistant", "你好，我是你的 AI 任务助手。告诉我想做什么，我会通过对话补全时间、截止日期和安排，并记住你稳定的使用习惯。")
+                    messages = database.recentChat(50)
+                }
+                messages to database.getHabitMemory()
+            }
+            adapter.submit(state.first)
+            updateMemoryStatus(state.second)
+            scrollToBottom()
         }
     }
 
-    private fun callAi(userText: String): List<PlannedItem> {
+    private fun sendMessage() {
+        val text = input.text.toString().trim()
+        if (text.isEmpty() || !sendButton.isEnabled) return
+        input.text.clear()
+        val optimistic = ChatMessage(-System.nanoTime(), "user", text, System.currentTimeMillis())
+        adapter.add(optimistic)
+        scrollToBottom()
+        setSending(true)
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    database.addChat("user", text)
+                    val memory = database.getHabitMemory()
+                    val turn = callAi(database.recentChat(16), memory)
+                    val visibleReply = buildConversationReply(turn)
+                    val savedReply = database.addChat("assistant", visibleReply)
+                    if (turn.memory.isNotBlank() && turn.memory != memory) {
+                        database.setHabitMemory(turn.memory.take(1500))
+                    }
+                    Triple(turn, savedReply, database.getHabitMemory())
+                }
+            }.onSuccess { (turn, reply, memory) ->
+                adapter.add(reply)
+                planned = turn.items
+                renderPlan()
+                updateMemoryStatus(memory)
+                status.text = if (planned.isEmpty()) "请继续回答 AI 的问题" else "方案已生成，请确认后保存或继续修改"
+                scrollToBottom()
+            }.onFailure {
+                adapter.add(ChatMessage(-System.nanoTime(), "assistant", "请求失败：${it.message}", System.currentTimeMillis()))
+                status.text = "连接失败，请检查 AI 设置"
+                scrollToBottom()
+            }
+            setSending(false)
+        }
+    }
+
+    private fun callAi(history: List<ChatMessage>, memory: String): AiTurn {
         val prefs = getSharedPreferences(AiPreferences.FILE, Context.MODE_PRIVATE)
         val base = prefs.getString(AiPreferences.BASE_URL, AiPreferences.DEFAULT_BASE).orEmpty().trimEnd('/')
         val key = prefs.getString(AiPreferences.API_KEY, "").orEmpty()
         val model = prefs.getString(AiPreferences.MODEL, AiPreferences.DEFAULT_MODEL).orEmpty()
-        if (key.isBlank()) error("Configure an API key in AI settings first")
+        if (key.isBlank()) error("请先在 AI 设置中填写 API Key")
         val now = ZonedDateTime.now()
-        val system = """You convert natural-language plans into structured data. Current time is $now and timezone is ${ZoneId.systemDefault()}. Return ONLY valid JSON, no markdown: {"items":[{"type":"task|event","title":"string","description":"string","start":"ISO-8601 datetime or null","end":"ISO-8601 datetime or null","due":"ISO-8601 datetime or null","allDay":false}]}. Use event when a fixed time block is requested; use task for a todo/deadline. Resolve relative dates. Never invent extra items."""
+        val system = """你是中文任务规划助手，通过多轮对话帮助用户创建待办和日程。
+当前时间：$now；时区：${ZoneId.systemDefault()}。
+已记住的用户习惯：${memory.ifBlank { "暂无" }}
+
+规则：
+1. 始终用简体中文回复。
+2. 如果日期、时间或意图存在关键歧义，先提出一个简短明确的问题，items 返回空数组；不要擅自猜测。
+3. 信息足够时给出可保存方案。固定时间段用 event，待办或截止日期用 task。
+4. 相对日期必须转换为带时区的 ISO-8601 时间。日程未说明时长时优先使用已记住习惯，否则默认 1 小时。
+5. memory 只记录稳定、可复用的偏好，例如常用开始时间、默认时长、工作日、提醒或任务分类习惯。不要记录一次性事件、隐私内容或推测。没有新习惯时原样返回已有记忆。
+6. reply 必须概括当前理解；有 items 时清楚告诉用户可以保存或继续修改。
+
+只返回合法 JSON，不要 Markdown：
+{"reply":"中文回复","memory":"精炼的习惯摘要","items":[{"type":"task|event","title":"标题","description":"说明","start":"ISO-8601 或 null","end":"ISO-8601 或 null","due":"ISO-8601 或 null","allDay":false}]}"""
+        val messages = JSONArray().put(JSONObject().put("role", "system").put("content", system))
+        history.forEach { message ->
+            messages.put(JSONObject().put("role", message.role).put("content", message.content))
+        }
         val payload = JSONObject().apply {
             put("model", model)
-            put("temperature", 0.1)
+            put("temperature", 0.2)
             put("response_format", JSONObject().put("type", "json_object"))
-            put("messages", JSONArray()
-                .put(JSONObject().put("role", "system").put("content", system))
-                .put(JSONObject().put("role", "user").put("content", userText)))
+            put("messages", messages)
         }.toString()
         val connection = URL("$base/chat/completions").openConnection() as HttpURLConnection
-        connection.requestMethod = "POST"
-        connection.doOutput = true
-        connection.setRequestProperty("Authorization", "Bearer $key")
-        connection.setRequestProperty("Content-Type", "application/json")
-        connection.connectTimeout = 20_000
-        connection.readTimeout = 60_000
-        connection.outputStream.use { it.write(payload.toByteArray()) }
-        val body = (if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream).bufferedReader().use { it.readText() }
-        if (connection.responseCode !in 200..299) error("HTTP ${connection.responseCode}: ${body.take(220)}")
-        var content = JSONObject(body).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content").trim()
-        if (content.startsWith("```")) content = content.substringAfter('\n').substringBeforeLast("```").trim()
-        val array = JSONObject(content).getJSONArray("items")
-        val result = (0 until array.length()).map { index ->
-            val item = array.getJSONObject(index)
-            PlannedItem(
-                item.optString("type", "task").lowercase(),
-                item.getString("title"), item.optString("description"),
-                item.nullableString("start"), item.nullableString("end"), item.nullableString("due"),
-                item.optBoolean("allDay", false)
-            )
+        try {
+            connection.requestMethod = "POST"
+            connection.doOutput = true
+            connection.setRequestProperty("Authorization", "Bearer $key")
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.connectTimeout = 20_000
+            connection.readTimeout = 60_000
+            connection.outputStream.use { it.write(payload.toByteArray()) }
+            val code = connection.responseCode
+            val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                .bufferedReader().use { it.readText() }
+            if (code !in 200..299) error("HTTP $code：${body.take(220)}")
+            var content = JSONObject(body).getJSONArray("choices").getJSONObject(0)
+                .getJSONObject("message").getString("content").trim()
+            if (content.startsWith("```")) content = content.substringAfter('\n').substringBeforeLast("```").trim()
+            val json = JSONObject(content)
+            val array = json.optJSONArray("items") ?: JSONArray()
+            val items = (0 until array.length()).map { index ->
+                val item = array.getJSONObject(index)
+                PlannedItem(
+                    item.optString("type", "task").lowercase(), item.getString("title"),
+                    item.optString("description"), item.nullableString("start"),
+                    item.nullableString("end"), item.nullableString("due"), item.optBoolean("allDay", false)
+                )
+            }
+            return AiTurn(json.optString("reply", "请继续说明你的安排。"), items, json.optString("memory", memory))
+        } finally {
+            connection.disconnect()
         }
-        if (result.isEmpty()) error("AI returned an empty plan")
-        return result
     }
 
-    private fun renderPreview() {
-        preview.removeAllViews()
-        planned.forEach { item ->
-            preview.addView(TextView(this).apply {
-                val whenText = if (item.type == "event") "${item.start.orEmpty()} → ${item.end.orEmpty()}" else item.due?.let { "Due $it" }.orEmpty()
-                text = "${if (item.type == "event") "EVENT" else "TASK"} · ${item.title}\n$whenText${if (item.description.isNotBlank()) "\n${item.description}" else ""}"
-                textSize = 16f
-                pad(12)
-                setBackgroundResource(android.R.drawable.dialog_holo_light_frame)
-            })
+    private fun buildConversationReply(turn: AiTurn): String {
+        if (turn.items.isEmpty()) return turn.reply
+        return turn.reply + "\n" + turn.items.joinToString("\n") { item ->
+            if (item.type == "event") "• 日程：${item.title}（${item.start.orEmpty()} 至 ${item.end.orEmpty()}）"
+            else "• 任务：${item.title}${item.due?.let { "（截止 $it）" }.orEmpty()}"
         }
-        saveButton.isEnabled = planned.isNotEmpty()
+    }
+
+    private fun renderPlan() {
+        if (planned.isEmpty()) {
+            preview.visibility = View.GONE
+            saveButton.visibility = View.GONE
+            saveButton.isEnabled = false
+            return
+        }
+        preview.text = "待保存：${planned.count { it.type != "event" }} 个任务，${planned.count { it.type == "event" }} 个日程"
+        preview.visibility = View.VISIBLE
+        saveButton.visibility = View.VISIBLE
+        saveButton.isEnabled = true
     }
 
     private fun saveAll() {
-        val events = planned.filter { it.type == "event" }
-        if (events.isNotEmpty() && ActivityCompat.checkSelfPermission(this, Manifest.permission.WRITE_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
+        if (planned.any { it.type == "event" } && ActivityCompat.checkSelfPermission(
+                this, Manifest.permission.WRITE_CALENDAR
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR), 41)
-            status.text = "Calendar permission is needed; tap Save again after granting it"
+            status.text = "请授予日历权限，然后再次点击保存"
             return
         }
-        runCatching {
-            val db = TaskDatabase(this)
-            var saved = 0
-            planned.forEach { item ->
-                if (item.type == "event") saveEvent(item) else db.add(item.title, item.description, item.due)
-                saved++
+        val saving = planned
+        saveButton.isEnabled = false
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    saving.forEach { item ->
+                        if (item.type == "event") saveEvent(item) else database.add(item.title, item.description, item.due)
+                    }
+                    database.addChat("assistant", "已保存 ${saving.size} 项安排。你可以继续告诉我下一项计划。")
+                }
+            }.onSuccess {
+                planned = emptyList()
+                renderPlan()
+                adapter.add(ChatMessage(-System.nanoTime(), "assistant", "已保存 ${saving.size} 项安排。你可以继续告诉我下一项计划。", System.currentTimeMillis()))
+                status.text = "保存成功"
+                scrollToBottom()
+            }.onFailure {
+                status.text = "保存失败：${it.message}"
+                saveButton.isEnabled = true
             }
-            planned = emptyList()
-            preview.removeAllViews()
-            saveButton.isEnabled = false
-            status.text = "$saved item(s) saved"
-        }.onFailure { status.text = "Save failed: ${it.message}" }
+        }
     }
 
     private fun saveEvent(item: PlannedItem) {
-        val calendarId = firstWritableCalendar() ?: error("No writable calendar is available")
-        val start = parseTime(item.start ?: error("Event start is missing"))
-        val end = parseTime(item.end ?: item.start ?: error("Event end is missing"))
+        val calendarId = firstWritableCalendar() ?: error("没有可写入的日历")
+        val start = parseTime(item.start ?: error("日程缺少开始时间"))
+        val end = parseTime(item.end ?: item.start ?: error("日程缺少结束时间"))
         val values = ContentValues().apply {
             put(CalendarContract.Events.CALENDAR_ID, calendarId)
             put(CalendarContract.Events.TITLE, item.title)
@@ -184,23 +287,96 @@ class AiAssistantActivity : AppCompatActivity() {
             put(CalendarContract.Events.EVENT_TIMEZONE, ZoneId.systemDefault().id)
             put(CalendarContract.Events.ALL_DAY, if (item.allDay) 1 else 0)
         }
-        contentResolver.insert(CalendarContract.Events.CONTENT_URI, values) ?: error("Calendar provider rejected the event")
+        contentResolver.insert(CalendarContract.Events.CONTENT_URI, values) ?: error("系统日历拒绝写入")
     }
 
     private fun firstWritableCalendar(): Long? {
-        val projection = arrayOf(CalendarContract.Calendars._ID)
         val selection = "${CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL} >= ? AND ${CalendarContract.Calendars.VISIBLE} = 1"
-        val args = arrayOf(CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR.toString())
-        contentResolver.query(CalendarContract.Calendars.CONTENT_URI, projection, selection, args, null)?.use {
-            if (it.moveToFirst()) return it.getLong(0)
-        }
+        contentResolver.query(
+            CalendarContract.Calendars.CONTENT_URI, arrayOf(CalendarContract.Calendars._ID),
+            selection, arrayOf(CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR.toString()), null
+        )?.use { if (it.moveToFirst()) return it.getLong(0) }
         return null
     }
 
     private fun parseTime(value: String): Long = runCatching { OffsetDateTime.parse(value).toInstant().toEpochMilli() }
         .getOrElse { java.time.LocalDateTime.parse(value).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() }
 
-    override fun onDestroy() { scope.cancel(); super.onDestroy() }
+    private fun setSending(sending: Boolean) {
+        sendButton.isEnabled = !sending
+        input.isEnabled = !sending
+        status.text = if (sending) "DeepSeek 正在思考…" else status.text
+    }
+
+    private fun updateMemoryStatus(memory: String) {
+        memoryStatus.text = if (memory.isBlank()) "习惯记忆：尚未形成" else "习惯记忆：$memory"
+    }
+
+    private fun scrollToBottom() = chatList.post { if (adapter.count > 0) chatList.setSelection(adapter.count - 1) }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menu.add(0, MENU_SETTINGS, 0, "AI 设置")
+        menu.add(0, MENU_CLEAR_CHAT, 1, "清空对话")
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        when (item.itemId) {
+            android.R.id.home -> finish()
+            MENU_SETTINGS -> startActivity(Intent(this, AiSettingsActivity::class.java))
+            MENU_CLEAR_CHAT -> clearConversation()
+            else -> return super.onOptionsItemSelected(item)
+        }
+        return true
+    }
+
+    private fun clearConversation() {
+        scope.launch {
+            withContext(Dispatchers.IO) { database.clearChat() }
+            planned = emptyList()
+            renderPlan()
+            adapter.submit(emptyList())
+            loadConversation()
+            status.text = "对话已清空，习惯记忆仍然保留"
+        }
+    }
+
+    private inner class ChatAdapter : BaseAdapter() {
+        private val messages = ArrayList<ChatMessage>()
+        fun submit(value: List<ChatMessage>) { messages.clear(); messages.addAll(value); notifyDataSetChanged() }
+        fun add(value: ChatMessage) { messages.add(value); notifyDataSetChanged() }
+        override fun getCount() = messages.size
+        override fun getItem(position: Int) = messages[position]
+        override fun getItemId(position: Int) = messages[position].id
+
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+            val row = (convertView as? LinearLayout) ?: LinearLayout(this@AiAssistantActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(dp(4), dp(5), dp(4), dp(5))
+                addView(TextView(this@AiAssistantActivity).apply {
+                    maxWidth = resources.displayMetrics.widthPixels * 4 / 5
+                    textSize = 16f
+                    pad(12)
+                })
+            }
+            val message = messages[position]
+            row.gravity = if (message.role == "user") Gravity.END else Gravity.START
+            val bubble = row.getChildAt(0) as TextView
+            bubble.text = message.content
+            bubble.background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(if (message.role == "user") 0xFFDCEBFF.toInt() else 0xFFF1F1F1.toInt())
+            }
+            return row
+        }
+    }
+
+    override fun onDestroy() { scope.cancel(); database.close(); super.onDestroy() }
+
+    companion object {
+        private const val MENU_SETTINGS = 1001
+        private const val MENU_CLEAR_CHAT = 1002
+    }
 }
 
 private fun JSONObject.nullableString(key: String): String? =

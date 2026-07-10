@@ -13,7 +13,14 @@ data class LocalTask(
     val completed: Boolean,
 )
 
-class TaskDatabase(context: Context) : SQLiteOpenHelper(context, "etask.db", null, 1) {
+data class ChatMessage(
+    val id: Long,
+    val role: String,
+    val content: String,
+    val createdAt: Long,
+)
+
+class TaskDatabase(context: Context) : SQLiteOpenHelper(context, "etask.db", null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """CREATE TABLE tasks (
@@ -25,9 +32,29 @@ class TaskDatabase(context: Context) : SQLiteOpenHelper(context, "etask.db", nul
                 created_at INTEGER NOT NULL
             )""".trimIndent()
         )
+        createAiTables(db)
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) createAiTables(db)
+    }
+
+    private fun createAiTables(db: SQLiteDatabase) {
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            )""".trimIndent()
+        )
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS user_profile (
+                profile_key TEXT PRIMARY KEY,
+                profile_value TEXT NOT NULL
+            )""".trimIndent()
+        )
+    }
 
     fun add(title: String, notes: String = "", due: String? = null): Long =
         writableDatabase.insert("tasks", null, ContentValues().apply {
@@ -39,7 +66,7 @@ class TaskDatabase(context: Context) : SQLiteOpenHelper(context, "etask.db", nul
         })
 
     fun list(): List<LocalTask> {
-        val result = mutableListOf<LocalTask>()
+        val result = ArrayList<LocalTask>()
         readableDatabase.query(
             "tasks", arrayOf("id", "title", "notes", "due", "completed"),
             null, null, null, null, "completed ASC, COALESCE(due, '9999') ASC, created_at DESC"
@@ -62,5 +89,53 @@ class TaskDatabase(context: Context) : SQLiteOpenHelper(context, "etask.db", nul
 
     fun delete(id: Long) {
         writableDatabase.delete("tasks", "id = ?", arrayOf(id.toString()))
+    }
+
+    fun addChat(role: String, content: String): ChatMessage {
+        val now = System.currentTimeMillis()
+        val id = writableDatabase.insertOrThrow("chat_messages", null, ContentValues().apply {
+            put("role", role)
+            put("content", content.trim())
+            put("created_at", now)
+        })
+        return ChatMessage(id, role, content.trim(), now)
+    }
+
+    fun recentChat(limit: Int = 20): List<ChatMessage> {
+        val result = ArrayList<ChatMessage>()
+        readableDatabase.rawQuery(
+            "SELECT id, role, content, created_at FROM chat_messages ORDER BY id DESC LIMIT ?",
+            arrayOf(limit.coerceIn(1, 100).toString())
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                result += ChatMessage(cursor.getLong(0), cursor.getString(1), cursor.getString(2), cursor.getLong(3))
+            }
+        }
+        result.reverse()
+        return result
+    }
+
+    fun clearChat() {
+        writableDatabase.delete("chat_messages", null, null)
+    }
+
+    fun getHabitMemory(): String = readableDatabase.query(
+        "user_profile", arrayOf("profile_value"), "profile_key = ?", arrayOf(HABIT_KEY),
+        null, null, null
+    ).use { if (it.moveToFirst()) it.getString(0) else "" }
+
+    fun setHabitMemory(memory: String) {
+        writableDatabase.insertWithOnConflict("user_profile", null, ContentValues().apply {
+            put("profile_key", HABIT_KEY)
+            put("profile_value", memory.trim())
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun clearHabitMemory() {
+        writableDatabase.delete("user_profile", "profile_key = ?", arrayOf(HABIT_KEY))
+    }
+
+    companion object {
+        private const val HABIT_KEY = "habit_memory"
     }
 }

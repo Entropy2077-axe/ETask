@@ -861,8 +861,8 @@
     <string name="chips_action_cancel">Cancel</string>
     <!-- Text displayed on the drop down item that is shown when app doesn't have Contact permission. This item will open dialog to request permission. [CHAR LIMIT=50] -->
     <string name="chips_permission_text">Allow contacts suggestions</string>
-    <string name="tasks_title">Tasks</string>
-    <string name="ai_assistant_title">AI planner</string>
-    <string name="ai_settings_title">AI settings</string>
+    <string name="tasks_title">任务</string>
+    <string name="ai_assistant_title">AI 任务助手</string>
+    <string name="ai_settings_title">AI 设置</string>
     <string name="etask_app_name">ETask</string>
 </resources>
