@@ -19,8 +19,8 @@ android {
 	defaultConfig {
 		minSdk = 23
 		targetSdk = 36
-		versionCode = 60
-		versionName = "1.4.0"
+		versionCode = 61
+		versionName = "1.4.1"
 		applicationId = "com.etask.app"
 		testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 	}

@@ -19,8 +19,10 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import com.android.calendar.AllInOneActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -139,6 +141,9 @@ class AiAssistantActivity : AppCompatActivity() {
         root.addView(chatList, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(preview); root.addView(saveButton); root.addView(status); root.addView(inputRow)
         setContentView(root)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = returnToHome()
+        })
         loadConversation()
     }
 
@@ -480,11 +485,18 @@ $calendarCatalog
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         when (item.itemId) {
-            android.R.id.home -> finish()
+            android.R.id.home -> returnToHome()
             MENU_SETTINGS -> startActivity(Intent(this, AiSettingsActivity::class.java))
             else -> return super.onOptionsItemSelected(item)
         }
         return true
+    }
+
+    private fun returnToHome() {
+        startActivity(Intent(this, AllInOneActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        })
+        finish()
     }
 
     private fun clearConversation() {

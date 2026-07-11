@@ -9,10 +9,6 @@
     </group>
     <group android:id="@+id/navigation_subheader" android:checkableBehavior="none">
         <item
-            android:id="@+id/action_ai_assistant"
-            android:icon="@drawable/ic_menu_search"
-            android:title="@string/ai_assistant_title" />
-        <item
             android:id="@+id/action_ai_settings"
             android:icon="@drawable/outline_settings"
             android:title="@string/ai_settings_title" />

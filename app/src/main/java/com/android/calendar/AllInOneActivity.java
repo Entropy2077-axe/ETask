@@ -890,7 +890,10 @@ public class AllInOneActivity extends AbstractCalendarActivity implements EventH
         int viewType = ViewType.CURRENT;
         long extras = CalendarController.EXTRA_GOTO_TIME;
         final int itemId = item.getItemId();
-        if (itemId == R.id.action_refresh) {
+        if (itemId == R.id.action_ai_assistant) {
+            startActivity(new Intent(this, com.android.calendar.etask.AiAssistantActivity.class));
+            return true;
+        } else if (itemId == R.id.action_refresh) {
             mController.refreshCalendars();
             return true;
         } else if (itemId == R.id.action_today) {
