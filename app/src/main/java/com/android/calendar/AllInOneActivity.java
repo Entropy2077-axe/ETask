@@ -836,7 +836,7 @@ public class AllInOneActivity extends AbstractCalendarActivity implements EventH
         }
 
         mSearchMenu = menu.findItem(R.id.action_search);
-        mSearchView = (SearchView) menu.findItem(R.id.action_search).getActionView();
+        mSearchView = mSearchMenu == null ? null : (SearchView) mSearchMenu.getActionView();
         if (mSearchView != null) {
             Utils.setUpSearchView(mSearchView, this);
             mSearchView.setOnQueryTextListener(this);
