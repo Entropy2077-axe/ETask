@@ -2,11 +2,15 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
-        android:id="@+id/action_search"
-        android:icon="@drawable/ic_menu_search"
-        android:title="@string/search"
-        app:actionViewClass="androidx.appcompat.widget.SearchView"
-        app:showAsAction="always|collapseActionView" />
+        android:id="@+id/action_ai_assistant"
+        android:icon="@drawable/ic_outline_schedule"
+        android:title="@string/ai_assistant_title"
+        app:showAsAction="always" />
+    <item
+        android:id="@+id/action_today"
+        android:icon="@drawable/today_icon"
+        android:title="@string/goto_today"
+        app:showAsAction="always" />
     <item
         android:id="@+id/action_refresh"
         android:icon="@drawable/ic_refresh_etask"

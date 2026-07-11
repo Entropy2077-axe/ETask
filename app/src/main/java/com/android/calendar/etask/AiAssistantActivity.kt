@@ -19,8 +19,10 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import com.android.calendar.AllInOneActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,11 +34,13 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.OffsetDateTime
+import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import ws.xsoh.etar.R
 
 data class PlannedItem(
+    val action: String,
     val type: String,
     val title: String,
     val description: String,
@@ -49,6 +53,7 @@ data class PlannedItem(
     val recurrenceRule: String?,
     val calendarId: Long?,
     val calendarName: String,
+    val eventId: Long?,
 )
 
 private data class DeviceCalendar(
@@ -57,6 +62,15 @@ private data class DeviceCalendar(
     val account: String,
     val color: Int,
     val writable: Boolean,
+)
+
+private data class DeviceEvent(
+    val id: Long,
+    val title: String,
+    val start: Long,
+    val end: Long,
+    val calendarId: Long,
+    val calendarName: String,
 )
 
 private data class AiTurn(val reply: String, val items: List<PlannedItem>, val memory: String)
@@ -106,7 +120,11 @@ class AiAssistantActivity : AppCompatActivity() {
             setOnClickListener { saveAll() }
         }
         status = TextView(this).apply { textSize = 12f }
-        val inputRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
+        val inputRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.BOTTOM
+            layoutParams = LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
         input = EditText(this).apply {
             hint = "继续对话，例如：改到周五下午三点"
             maxLines = 4
@@ -123,6 +141,9 @@ class AiAssistantActivity : AppCompatActivity() {
         root.addView(chatList, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(preview); root.addView(saveButton); root.addView(status); root.addView(inputRow)
         setContentView(root)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = returnToHome()
+        })
         loadConversation()
     }
 
@@ -160,7 +181,8 @@ class AiAssistantActivity : AppCompatActivity() {
                 withContext(Dispatchers.IO) {
                     database.addChat("user", text)
                     val memory = database.getHabitMemory()
-                    val turn = callAi(database.recentChat(16), memory, loadCalendars())
+                    val calendars = loadCalendars()
+                    val turn = callAi(database.recentChat(16), memory, calendars, loadEvents(calendars))
                     val visibleReply = buildConversationReply(turn)
                     val savedReply = database.addChat("assistant", visibleReply)
                     if (turn.memory.isNotBlank() && turn.memory != memory) {
@@ -184,7 +206,12 @@ class AiAssistantActivity : AppCompatActivity() {
         }
     }
 
-    private fun callAi(history: List<ChatMessage>, memory: String, calendars: List<DeviceCalendar>): AiTurn {
+    private fun callAi(
+        history: List<ChatMessage>,
+        memory: String,
+        calendars: List<DeviceCalendar>,
+        events: List<DeviceEvent>,
+    ): AiTurn {
         val prefs = getSharedPreferences(AiPreferences.FILE, Context.MODE_PRIVATE)
         val base = prefs.getString(AiPreferences.BASE_URL, AiPreferences.DEFAULT_BASE).orEmpty().trimEnd('/')
         val key = prefs.getString(AiPreferences.API_KEY, "").orEmpty()
@@ -194,7 +221,15 @@ class AiAssistantActivity : AppCompatActivity() {
         val calendarCatalog = calendars.joinToString("\n") {
             "- id=${it.id}；名称=${it.name}；账户=${it.account}；${if (it.writable) "可写" else "只读"}"
         }.ifBlank { "- 当前设备没有日历" }
-        val system = """你是中文任务规划助手，通过多轮对话帮助用户创建待办和日程。
+        val eventCatalog = events.joinToString("\n") {
+            "- eventId=${it.id}; title=${it.title}; start=${formatEventTime(it.start)}; end=${formatEventTime(it.end)}; calendar=${it.calendarName}"
+        }.ifBlank { "- No upcoming events are available for deletion." }
+        val system = """For a request to delete a calendar event, identify one unambiguous event from the deletion catalog below. Return an item with action=\"delete_event\", type=\"event\", eventId set to that catalog ID, and its title/calendarName. Never invent an eventId. If more than one event could match, ask one concise clarification question and return no items. Deletion is only performed after the user taps the confirmation button. Always reply in Simplified Chinese.
+Deletion catalog (recent and upcoming events):
+$eventCatalog
+For normal creation, action must be \"create\" (or omitted). The JSON shape of every item additionally accepts \"action\" and \"eventId\".
+
+你是中文任务规划助手，通过多轮对话帮助用户创建待办和日程。
 当前时间：$now；时区：${ZoneId.systemDefault()}。
 已记住的用户习惯：${memory.ifBlank { "暂无" }}
 设备上的全部日历：
@@ -247,12 +282,13 @@ $calendarCatalog
                 val item = array.getJSONObject(index)
                 val recurrence = item.nullableString("recurrenceRule")?.sanitizeRRule()
                 PlannedItem(
+                    item.optString("action", "create").lowercase(),
                     item.optString("type", "task").lowercase(), item.getString("title").trim().take(16),
                     item.optString("description"), item.nullableString("start"),
                     item.nullableString("end"), item.nullableString("due"), item.optBoolean("allDay", false),
                     item.optString("location"), item.optBoolean("isRecurring", false) || recurrence != null,
                     recurrence,
-                    item.nullableLong("calendarId"), item.optString("calendarName")
+                    item.nullableLong("calendarId"), item.optString("calendarName"), item.nullableLong("eventId")
                 )
             }
             return AiTurn(json.optString("reply", "请继续说明你的安排。"), items, json.optString("memory", memory))
@@ -270,7 +306,8 @@ $calendarCatalog
                 item.recurrenceRule?.let { "周期：$it" }
             ).joinToString("，")
             val suffix = if (extras.isBlank()) "" else "；$extras"
-            if (item.type == "event") "• 日程：${item.title}（${item.start.orEmpty()} 至 ${item.end.orEmpty()}$suffix）"
+            if (item.action == "delete_event") "• 删除日程：${item.title}（${item.calendarName}）"
+            else if (item.type == "event") "• 日程：${item.title}（${item.start.orEmpty()} 至 ${item.end.orEmpty()}$suffix）"
             else "• 任务：${item.title}${item.due?.let { "（截止 $it$suffix）" } ?: if (suffix.isBlank()) "" else "（${suffix.removePrefix("；")}）"}"
         }
     }
@@ -282,7 +319,8 @@ $calendarCatalog
             saveButton.isEnabled = false
             return
         }
-        preview.text = "待保存：${planned.count { it.type != "event" }} 个任务，${planned.count { it.type == "event" }} 个日程"
+        val deletionCount = planned.count { it.action == "delete_event" }
+        preview.text = "待执行：${planned.count { it.type != "event" && it.action != "delete_event" }} 个任务，${planned.count { it.type == "event" && it.action != "delete_event" }} 个日程，删除 $deletionCount 个日程"
         preview.visibility = View.VISIBLE
         saveButton.visibility = View.VISIBLE
         saveButton.isEnabled = true
@@ -302,19 +340,36 @@ $calendarCatalog
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    saving.forEach { item -> saveEvent(item) }
-                    database.addChat("assistant", "已保存 ${saving.size} 项安排。你可以继续告诉我下一项计划。")
+                    saving.forEach(::applyPlanItem)
+                    database.addChat("assistant", "已执行 ${saving.size} 项安排。你可以继续告诉我下一项计划。")
                 }
             }.onSuccess {
                 planned = emptyList()
                 renderPlan()
-                adapter.add(ChatMessage(-System.nanoTime(), "assistant", "已保存 ${saving.size} 项安排。你可以继续告诉我下一项计划。", System.currentTimeMillis()))
-                status.text = "保存成功"
+                adapter.add(ChatMessage(-System.nanoTime(), "assistant", "已执行 ${saving.size} 项安排。你可以继续告诉我下一项计划。", System.currentTimeMillis()))
+                status.text = "执行成功"
                 scrollToBottom()
             }.onFailure {
                 status.text = "保存失败：${it.message}"
                 saveButton.isEnabled = true
             }
+        }
+    }
+
+    private fun applyPlanItem(item: PlannedItem) {
+        if (item.action == "delete_event") {
+            deleteEvent(item)
+        } else {
+            saveEvent(item)
+        }
+    }
+
+    private fun deleteEvent(item: PlannedItem) {
+        val eventId = item.eventId ?: error("删除日程缺少日程 ID")
+        val event = loadEvents(loadCalendars()).firstOrNull { it.id == eventId }
+            ?: error("要删除的日程已不存在或不在可删除范围内")
+        if (contentResolver.delete(CalendarContract.Events.CONTENT_URI.buildUpon().appendPath(event.id.toString()).build(), null, null) != 1) {
+            error("系统日历拒绝删除日程")
         }
     }
 
@@ -370,6 +425,42 @@ $calendarCatalog
         return result
     }
 
+    private fun loadEvents(calendars: List<DeviceCalendar>): List<DeviceEvent> {
+        if (calendars.isEmpty()) return emptyList()
+        val calendarNames = calendars.associate { it.id to it.name }
+        val ids = calendars.joinToString(",") { it.id.toString() }
+        val now = System.currentTimeMillis()
+        val from = now - 30L * 24 * 60 * 60 * 1000
+        val until = now + 180L * 24 * 60 * 60 * 1000
+        val result = ArrayList<DeviceEvent>()
+        contentResolver.query(
+            CalendarContract.Events.CONTENT_URI,
+            arrayOf(
+                CalendarContract.Events._ID,
+                CalendarContract.Events.TITLE,
+                CalendarContract.Events.DTSTART,
+                CalendarContract.Events.DTEND,
+                CalendarContract.Events.CALENDAR_ID,
+            ),
+            "${CalendarContract.Events.CALENDAR_ID} IN ($ids) AND ${CalendarContract.Events.DELETED} = 0 AND (${CalendarContract.Events.DTSTART} BETWEEN ? AND ? OR ${CalendarContract.Events.RRULE} IS NOT NULL)",
+            arrayOf(from.toString(), until.toString()),
+            "${CalendarContract.Events.DTSTART} ASC"
+        )?.use { cursor ->
+            while (cursor.moveToNext() && result.size < 200) {
+                val calendarId = cursor.getLong(4)
+                result += DeviceEvent(
+                    cursor.getLong(0), cursor.getString(1).orEmpty(), cursor.getLong(2),
+                    if (cursor.isNull(3)) cursor.getLong(2) else cursor.getLong(3), calendarId,
+                    calendarNames[calendarId].orEmpty()
+                )
+            }
+        }
+        return result
+    }
+
+    private fun formatEventTime(millis: Long): String =
+        Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toOffsetDateTime().toString()
+
     private fun parseTime(value: String): Long = runCatching { OffsetDateTime.parse(value).toInstant().toEpochMilli() }
         .getOrElse { java.time.LocalDateTime.parse(value).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() }
 
@@ -394,11 +485,18 @@ $calendarCatalog
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         when (item.itemId) {
-            android.R.id.home -> finish()
+            android.R.id.home -> returnToHome()
             MENU_SETTINGS -> startActivity(Intent(this, AiSettingsActivity::class.java))
             else -> return super.onOptionsItemSelected(item)
         }
         return true
+    }
+
+    private fun returnToHome() {
+        startActivity(Intent(this, AllInOneActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        })
+        finish()
     }
 
     private fun clearConversation() {

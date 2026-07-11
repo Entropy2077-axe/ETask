@@ -13,7 +13,7 @@ internal fun View.pad(all: Int) = setPadding(context.dp(all), context.dp(all), c
 
 internal fun Context.verticalLayout(): LinearLayout = LinearLayout(this).apply {
     orientation = LinearLayout.VERTICAL
-    layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+    layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
 }
 
 internal fun Context.heading(text: String): TextView = TextView(this).apply {

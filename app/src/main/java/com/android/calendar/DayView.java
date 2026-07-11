@@ -2038,7 +2038,6 @@ public class DayView extends View implements View.OnCreateContextMenuListener,
         mEventLoader.loadEventsInBackground(mNumDays, events, mFirstJulianDay, new Runnable() {
 
             public void run() {
-                boolean fadeinEvents = mFirstJulianDay != mLoadedFirstJulianDay;
                 mEvents = events;
                 mLoadedFirstJulianDay = mFirstJulianDay;
                 if (mAllDayEvents == null) {
@@ -2062,7 +2061,7 @@ public class DayView extends View implements View.OnCreateContextMenuListener,
                 }
 
                 if (mAllDayLayouts == null || mAllDayLayouts.length < mAllDayEvents.size()) {
-                    mAllDayLayouts = new StaticLayout[events.size()];
+                    mAllDayLayouts = new StaticLayout[mAllDayEvents.size()];
                 } else {
                     Arrays.fill(mAllDayLayouts, null);
                 }
@@ -2073,17 +2072,10 @@ public class DayView extends View implements View.OnCreateContextMenuListener,
                 mComputeSelectedEvents = true;
                 recalc();
 
-                // Start animation to cross fade the events
-                if (fadeinEvents) {
-                    if (mEventsCrossFadeAnimation == null) {
-                        mEventsCrossFadeAnimation =
-                                ObjectAnimator.ofInt(DayView.this, "EventsAlpha", 0, 255);
-                        mEventsCrossFadeAnimation.setDuration(EVENTS_CROSS_FADE_DURATION);
-                    }
-                    mEventsCrossFadeAnimation.start();
-                } else{
-                    invalidate();
-                }
+                // Rendering a full week while running a cross-fade causes dropped frames on
+                // event-dense calendars. Draw the newly loaded data immediately instead.
+                mEventsAlpha = 255;
+                invalidate();
             }
         }, mCancelCallback);
     }

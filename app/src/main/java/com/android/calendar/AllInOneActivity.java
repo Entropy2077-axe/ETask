@@ -836,7 +836,7 @@ public class AllInOneActivity extends AbstractCalendarActivity implements EventH
         }
 
         mSearchMenu = menu.findItem(R.id.action_search);
-        mSearchView = (SearchView) menu.findItem(R.id.action_search).getActionView();
+        mSearchView = mSearchMenu == null ? null : (SearchView) mSearchMenu.getActionView();
         if (mSearchView != null) {
             Utils.setUpSearchView(mSearchView, this);
             mSearchView.setOnQueryTextListener(this);
@@ -890,7 +890,10 @@ public class AllInOneActivity extends AbstractCalendarActivity implements EventH
         int viewType = ViewType.CURRENT;
         long extras = CalendarController.EXTRA_GOTO_TIME;
         final int itemId = item.getItemId();
-        if (itemId == R.id.action_refresh) {
+        if (itemId == R.id.action_ai_assistant) {
+            startActivity(new Intent(this, com.android.calendar.etask.AiAssistantActivity.class));
+            return true;
+        } else if (itemId == R.id.action_refresh) {
             mController.refreshCalendars();
             return true;
         } else if (itemId == R.id.action_today) {
